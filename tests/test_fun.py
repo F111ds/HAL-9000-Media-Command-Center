@@ -250,7 +250,7 @@ assert len(_g3[0][2]["queue"]) == 3
 # the third card each side and HAL's log (the main screen)
 _sd = hs.tv_side(hal, hal.status())
 assert [r[0] for r in _sd["security"]["rows"]] == ["Defender", "Firewall", "Failed sign-ins", "Devices online"]
-assert _sd["security"]["badge"] == "CHECK" and _sd["security"]["rows"][3][1].endswith("new: android-3f2a")   # a new device
+assert _sd["security"]["badge"] == "NEW DEVICE" and _sd["security"]["rows"][3][1].endswith("new: android-3f2a")   # a new device
 assert [r[0] for r in _sd["system"]["rows"]] == ["Windows updates", "Fans", "Tailscale", "Up for"] and _sd["system"]["badge"] == "1 UPDATE"
 assert _sd["system"]["rows"][1][1] == "Auto" and _sd["system"]["rows"][3][1].startswith("PC ")
 assert [t["name"] for t in _sd["temps"]] == ["CPU", "GPU", "BOARD", "DRIVE", "PI"] and _sd["temps"][0]["value"] == 54
