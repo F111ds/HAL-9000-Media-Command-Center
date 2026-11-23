@@ -76,7 +76,7 @@ except ImportError:  # pragma: no cover - friendly message on a PC without psuti
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import system_monitor as sm  # noqa: E402
 
-VERSION = "1.38.1"
+VERSION = "1.38.2"
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parent
 else:
@@ -2900,6 +2900,13 @@ def kuma_spike(g: list) -> tuple[list, int | None]:
     return [min(x, round(cap, 1)) for x in g], top
 
 
+TV_WHY = {"cpu": "CPU BUSY", "cpu_temp": "CPU HOT", "ram": "MEMORY", "gpu": "GPU", "health": "DRIVE HEALTH",
+          "dtemp": "DRIVE HOT", "fan": "FANS", "vtemp": "GPU HOT", "ups_ob": "ON BATTERY", "ups_rb": "UPS BATTERY",
+          "ups_load": "UPS LOAD", "ups_err": "UPS", "internet": "INTERNET DOWN", "router": "ROUTER", "loss": "PACKET LOSS",
+          "dns": "DNS", "pihole": "PI-HOLE", "pihole_off": "PI-HOLE OFF", "defender": "DEFENDER", "firewall": "FIREWALL",
+          "newdev": "NEW DEVICE", "pi_temp": "PI HOT", "pi_mem": "PI MEMORY"}
+
+
 def tv_screen(st: dict) -> dict:
     """The four boxes on the TV's HAL screen (PC, network, Uptime Kuma, Raspberry Pi), ready to show: each box
     has a status ("ok" / "warning" / "critical") and rows of [label, value, level]."""
@@ -2910,6 +2917,18 @@ def tv_screen(st: dict) -> dict:
         found = [keys[k] for k in keys if k in prefixes]
         return "critical" if "critical" in found else "warning" if found else "ok"
 
+    def why(*prefixes):
+        """A word or two for a box's badge saying what needs a look ("Z: 92%", "NEW DEVICE"), worst first."""
+        hits = sorted((i for i in issues if i["level"] != "info" and i["key"].split(":")[0] in prefixes),
+                      key=lambda i: i["level"] != "critical")
+        if not hits:
+            return ""
+        k, _, arg = hits[0]["key"].partition(":")
+        if k in ("full", "days") and arg:
+            d = next((d for d in st["drives"] if d["mount"] == arg), None)
+            return f"{arg.rstrip(':')}: {round(d['pct'])}%" if d else f"{arg.rstrip(':')}: FULL"
+        return TV_WHY.get(k, "CHECK") + (f" +{len(hits) - 1}" if len(hits) > 1 else "")
+
     v, n, sec, pw = st["vitals"], st["net"], st["security"], st["power"]
     cpu, mem = v["cpu"], v["mem"]
     g = (v.get("gpus") or [{}])[0]
@@ -2919,7 +2938,8 @@ def tv_screen(st: dict) -> dict:
     up_txt = _dur(st.get("uptime")) + (f" · {upd} update{'s' if upd != 1 else ''}" if upd else " · restart due" if sec.get("pending_reboot") else "")
     full_keys = {i["key"].split(":", 1)[1] for i in issues if i["key"].startswith(("full:", "days:", "health:"))}
     drives = [{"mount": d["mount"].rstrip(":"), "pct": round(d["pct"]), "warn": d["mount"] in full_keys} for d in st["drives"]][:4]
-    pc = {"level": lvl("cpu", "cpu_temp", "ram", "gpu", "full", "days", "health", "dtemp", "fan", "vtemp", "ups_ob", "ups_rb", "ups_load", "ups_err"),
+    pc_keys = ("cpu", "cpu_temp", "ram", "gpu", "full", "days", "health", "dtemp", "fan", "vtemp", "ups_ob", "ups_rb", "ups_load", "ups_err")
+    pc = {"level": lvl(*pc_keys), "why": why(*pc_keys),
           "rows": [["CPU", f"{cpu.get('pct') or 0:.0f}%" + (f" · {cpu['temp']:.0f}°C" if cpu.get("temp") is not None else ""), lvl("cpu", "cpu_temp")],
                    ["GPU", (f"{g.get('util') or 0:.0f}%" + (f" · {g['temp']:.0f}°C" if g.get("temp") is not None else "")) if g else "—", lvl("gpu")],
                    ["Memory", f"{gb(mem.get('used'))} of {(mem.get('total') or 0) / 1073741824:.0f} GB", lvl("ram")],
@@ -2931,7 +2951,8 @@ def tv_screen(st: dict) -> dict:
     ph = st.get("pihole") or {}
     fw_on = bool(sec.get("firewall")) and all(f["on"] for f in sec["firewall"])
     dfd = sec.get("defender") or {}
-    net = {"level": lvl("internet", "router", "loss", "dns", "pihole", "pihole_off", "defender", "firewall", "newdev"),
+    net_keys = ("internet", "router", "loss", "dns", "pihole", "pihole_off", "defender", "firewall", "newdev")
+    net = {"level": lvl(*net_keys), "why": why(*net_keys),
            "rows": [["Internet", "DOWN" if keys.get("internet") else (f"{n['ping_ms']:.0f} ms" if n.get("ping_ms") is not None else "—")
                      + (f" · ↓ {sm.fmt_bytes(n['down'])}/s" if n.get("down") is not None else ""), lvl("internet", "loss")],
                     ["Router", ("not answering" if keys.get("router") else (f"{n['gateway_ms']:.0f} ms" if n.get("gateway_ms") is not None else "—")
@@ -2950,7 +2971,7 @@ def tv_screen(st: dict) -> dict:
             "monitors": sorted(kmon, key=lambda m: m["status"] == "up")[:5]}
     hw = ph.get("hw") or {}
     model = re.sub(r"\s+Rev\s+[\d.]+$", "", str(hw.get("model") or "")).replace("Raspberry Pi", "Pi").replace(" Model ", " ")
-    pi = {"level": lvl("pi_temp", "pi_mem", "pihole"), "found": bool(ph.get("found")),
+    pi = {"level": lvl("pi_temp", "pi_mem", "pihole"), "why": why("pi_temp", "pi_mem", "pihole"), "found": bool(ph.get("found")),
           "rows": [["Model", (model + (f" · {round((hw.get('mem_total') or 0) / 1e9)} GB" if hw.get("mem_total") else "")) or "—", "ok"],
                    ["Temperature", f"{hw['temp']:.0f}°C" if hw.get("temp") is not None else "—", lvl("pi_temp")],
                    ["CPU", (f"{hw['cpu_pct']:.0f}%" if hw.get("cpu_pct") is not None else "—") + (f" · load {hw['load'][0]:.2f}" if hw.get("load") else ""), "ok"],
@@ -3306,7 +3327,10 @@ def tv_side(hal, st: dict) -> dict:
     first = (new_dev[0].get("detail", "").split(" · ")[0] if new_dev else "") or "a device"
     devs = str(ph["clients"]) if ph.get("ok") and ph.get("clients") else "—"
     good = bool(dfd.get("rtp")) and fw_on and failed < 10 and not new_dev
-    security = {"badge": "ALL ON" if good else "CHECK", "level": "ok" if good else "warning", "rows": [
+    worries = [w for w, bad in (("DEFENDER OFF", not dfd.get("rtp")), ("FIREWALL OFF", not fw_on),
+                                ("SIGN-INS", failed >= 10), ("NEW DEVICE", new_dev)) if bad]
+    badge = "ALL ON" if good else worries[0] + (f" +{len(worries) - 1}" if len(worries) > 1 else "")
+    security = {"badge": badge, "level": "ok" if good else "warning", "rows": [
         ["Defender", "on" if dfd.get("rtp") else "off", "ok" if dfd.get("rtp") else "warning"],
         ["Firewall", "on" if fw_on else "off", "ok" if fw_on else "warning"],
         ["Failed sign-ins", f"{failed} today", "warning" if failed >= 10 else "ok"],
@@ -5196,7 +5220,7 @@ class Hal(FunMixin):
         if (sec.get("failed") or 0) >= 10:
             add("logons", "warning", f"{sec['failed']} failed sign-ins in 24 hours", "Someone may be guessing your password.", "shield")
         for who, n in event_summary(self.winevents.get("events", []), now).get("serious_drives", {}).items():
-            add(f"evdrive:{who}", "warning", f"{who[:1].upper() + who[1:]} logged {n} error{'s' if n > 1 else ''} this week",
+            add(f"evdrive:{who}", "warning", f"Windows logged {n} error{'s' if n > 1 else ''} for {who} this week",
                 "Windows recorded drive errors. Open the Windows events page to see what they mean.", "events")
         if (sec.get("unexpected7") or 0) >= 1:
             add("unexpected", "warning", "The PC shut down unexpectedly this week", f"{sec['unexpected7']} time(s) in 7 days.", "shield")
@@ -6420,7 +6444,7 @@ button.eye{border:0;padding:0;cursor:pointer}
 .tile .v{font:600 21px var(--mono);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tile .v small{font-size:12px;color:var(--soft)}
 .bar{height:5px;border-radius:3px;background:#222227;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;border-radius:3px;background:var(--green)}
 .bar i.warning{background:var(--amber)}.bar i.critical{background:var(--red)}.bar i.sky{background:var(--sky)}
-.sec{font:700 11px var(--mono);letter-spacing:.16em;color:var(--muted);margin:18px 2px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.sec{font:700 11px var(--mono);letter-spacing:.16em;color:#8E8E97;margin:18px 2px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .sec .r{letter-spacing:.06em}
 .list{background:var(--card);border-radius:14px;overflow:hidden;margin-bottom:12px}
 .row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-bottom:0;text-align:left}
@@ -6467,7 +6491,7 @@ div.alert{cursor:pointer}.alert .grow{flex:1;min-width:0}
 .seg{display:flex;background:var(--card);border-radius:12px;padding:4px;margin:0 0 12px}
 .seg button{flex:1;min-height:38px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-weight:600;font-size:13px}
 .seg button.on{background:#26262b;color:var(--white)}
-.btn{border:0;border-radius:10px;background:var(--card2);color:var(--white);font-weight:600;font-size:13px;padding:8px 12px;flex:none}
+.btn{border:0;border-radius:10px;background:var(--card2);color:var(--white);font-weight:600;font-size:13px;padding:8px 12px;min-height:44px;flex:none}
 .btn.red{background:#3a0d0a;color:#ffb4a8}.btn.wide{width:100%;padding:13px;font-size:15px}.btn:disabled{opacity:.5}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.chip{font:600 11px var(--mono);padding:4px 8px;border-radius:7px;background:var(--card2);color:var(--text)}
 .chip.warning{color:var(--amber)}.chip.critical{color:var(--red2)}
@@ -6495,7 +6519,7 @@ div.alert{cursor:pointer}.alert .grow{flex:1;min-width:0}
 .upsbig{font:700 26px var(--mono)}.upsbig small{font-size:13px;color:var(--soft);font-weight:600}
 /* tab bar */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;background:rgba(10,10,12,.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid #1d1d22;display:flex;padding:8px 6px calc(10px + env(safe-area-inset-bottom));z-index:5}
-nav.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:600;color:var(--muted);background:none;border:0;padding:2px 0}
+nav.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:600;color:#8E8E97;background:none;border:0;padding:2px 0}
 nav.tabs button.on{color:var(--red2)}nav.tabs svg{width:23px;height:23px}
 /* sheet, toast, pairing */
 .sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;z-index:10}
@@ -6609,7 +6633,7 @@ function rStatus(){
    '<button class="tile" data-go="vitals"><div class="k">GPU</div><div class="v">'+(g?f0(g.util)+'<small>%'+(g.temp!=null?' · '+f0(g.temp)+'°C':'')+'</small>':'—')+'</div><div class="bar"><i class="'+(g?lvlOf(g.util,85,97):'')+'" style="width:'+(g?g.util||0:0)+'%"></i></div></button>'+
    '<button class="tile" data-go="shield"><div class="k">INTERNET</div><div class="v">'+f0(n.ping_ms)+'<small> ms · '+f0(n.loss,'%')+' loss</small></div><div class="bar"><i class="sky" style="width:'+Math.min(100,(n.down||0)/1.25e6)+'%"></i></div></button></div>';
   x+='<div class="sec"><span>CRITICAL SYSTEMS</span><span class="r" style="color:'+(sysBad?'var(--amber)':'var(--green)')+'">'+(S.systems.length-sysBad)+' / '+S.systems.length+' NOMINAL</span></div><div class="list">'+
-   S.systems.map(s=>'<button class="row" data-go="'+s.tab+'"><span class="s '+s.level+'"></span><span class="t"><b>'+esc(s.name)+'</b><span>'+esc(s.detail)+'</span></span><span class="m'+(s.level!=='ok'?'" style="color:var(--'+(s.level==='critical'?'red2':'amber')+')':'"')+'>'+esc(s.count||(s.level==='ok'?'OK':s.level.toUpperCase()))+'</span></button>').join('')+'</div>';
+   S.systems.map(s=>'<button class="row" data-go="'+s.tab+'"><span class="s '+s.level+'"></span><span class="t"><b>'+esc(s.name)+'</b><span>'+esc(s.detail)+'</span></span><span class="m'+(s.level!=='ok'?'" style="color:var(--'+(s.level==='critical'?'red2':'amber')+')"':'"')+'>'+esc(s.count||(s.level==='ok'?'OK':s.level.toUpperCase()))+'</span></button>').join('')+'</div>';
   return {head,body:x}}
 
 /* ---------- HAL talks: the eye flickers with the words (and speaks aloud when tapped) ---------- */
@@ -6751,7 +6775,7 @@ function rDrives(){
     const label=lvl==='ok'?(k.health||'OK').toUpperCase():(k.health==='Warning'||k.health==='Unhealthy'?k.health.toUpperCase():Math.round(d.pct)+'% FULL');
     const chips=[];if(k.media)chips.push([k.media+(k.bus&&k.bus!=='SATA'?' '+k.bus:'')+(k.spindle&&k.spindle>1?' '+k.spindle:''),'']);
     if(k.temp)chips.push([f0(k.temp)+'°C',hot?'warning':'']);if(k.wear!=null)chips.push(['Wear '+f0(k.wear)+'%',k.wear>=80?'warning':'']);
-    if(k.read_errors!=null||k.write_errors!=null){const e=(k.read_errors||0)+(k.write_errors||0);chips.push([e?e+' errors':'0 errors',e?'warning':''])}
+    if(k.read_errors!=null||k.write_errors!=null){const e=(k.read_errors||0)+(k.write_errors||0);chips.push([e?e+' read/write errors':'No read/write errors',e?'warning':''])}
     if(k.hours)chips.push([Math.round(k.hours).toLocaleString()+' h','']);
     return'<div class="card '+(lvl==='ok'?'':lvl)+'"><h3>'+esc(d.mount+(d.label?' '+d.label:''))+' '+pill(lvl,label)+'</h3><div class="bar" style="height:8px"><i class="'+lvl+'" style="width:'+d.pct+'%"></i></div>'+
       '<div class="meta"><span>'+fb(d.free)+' free / '+fb(d.total,1)+'</span><span>'+(d.days_left!=null?'~'+Math.round(d.days_left)+' days left':(d.per_day!=null?'steady':''))+'</span></div>'+

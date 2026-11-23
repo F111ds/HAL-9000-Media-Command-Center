@@ -31,7 +31,7 @@ canvas.full{position:absolute;inset:0;width:960px;height:540px}
 .drv i b.w{background:linear-gradient(90deg,#ffc46b,#ffb020)}
 .mon{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:1.5px 0}
 .mon .d{width:7px;height:7px;border-radius:50%;background:#7cf5b5;flex:none;box-shadow:0 0 6px rgba(124,245,181,.6)}.mon .d.down{background:#ff6a4d;box-shadow:0 0 6px rgba(255,106,77,.6)}
-.mon span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mon svg{width:84px;height:16px;flex:none}.mon em{font:500 11.5px "JetBrains Mono",monospace;font-style:normal;width:44px;text-align:right;flex:none}
+.mon span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mon svg{width:58px;height:16px;flex:none}.mon em{font:500 11.5px "JetBrains Mono",monospace;font-style:normal;width:44px;text-align:right;flex:none}
 #greet{position:absolute;left:300px;width:360px;top:318px;text-align:center;font:500 10.5px "JetBrains Mono",monospace;letter-spacing:.34em;color:rgba(255,235,228,.75);white-space:nowrap;overflow:hidden}
 .quote{position:absolute;left:330px;width:300px;top:338px;text-align:center;font-size:17px;font-weight:300;font-style:italic;line-height:1.3;color:#ffe9e0;max-height:46px;overflow:hidden}
 .quote.long{font-size:14.5px}.quote.vlong{font-size:12.5px}
@@ -239,7 +239,7 @@ function tempArc(t,i){const f=Math.max(0,Math.min(1,t.value/(t.max||100))),r=24,
 
 function apply(){if(!B)return;const sc=B.screen||{};
  const pc=sc.pc||{},net=sc.net||{},k=sc.kuma||{},pi=sc.pi||{};
- setLevel('pcl',pc.level,'OK');setLevel('netl',net.level,'ALL UP');
+ setLevel('pcl',pc.level,'OK',pc.level!=='ok'&&pc.why);setLevel('netl',net.level,'ALL UP',net.level!=='ok'&&net.why);
  const row=(o,i)=>((o.rows||[])[i]||[]);
  const g=String(row(pc,1)[1]||'—'),m=String(row(pc,2)[1]||'—');
  $('gpu').textContent=g.split(' · ')[0];$('gpus').textContent='GPU'+(g.includes('·')?' · '+g.split(' · ')[1]:'');
@@ -252,7 +252,7 @@ function apply(){if(!B)return;const sc=B.screen||{};
  $('greet').textContent=String(B.greeting||'').toUpperCase();
  if(k.ok){$('kumal').className=lv(k.level);$('kumal').textContent='● '+String(k.head||'').toUpperCase()}else{$('kumal').className='warning';$('kumal').textContent=k.found?'● NOT ANSWERING':'● NOT SET UP'}
  mons=(k.monitors||[]).slice(0,5);$('mons').innerHTML=mons.map((x,i)=>`<div class="mon"><i class="d${x.status==='up'?'':' down'}" id="md${i}"></i><span>${esc(x.name)}</span><svg viewBox="0 0 84 16" preserveAspectRatio="none"${x.status==='up'?'':' style="display:none"'}><polyline id="m${i}" fill="none" stroke="${x.status==='up'?'#7cf5b5':'#ff6a4d'}" stroke-width="1.3" opacity=".9"/></svg><em class="${x.status==='up'?'':'critical'}">${x.status==='up'?(x.ms==null?'up':Math.round(x.ms)+' ms'):esc(x.status)}</em></div>`).join('');
- setLevel('pil',pi.level,'OK');const pr=pi.rows||[];
+ setLevel('pil',pi.level,'OK',pi.level!=='ok'&&pi.why);const pr=pi.rows||[];
  $('pit').textContent=String((pr[1]||[])[1]||'—').replace('°C','°');$('pis').textContent=[String((pr[0]||[])[1]||'').split(' · ')[0],'CPU '+String((pr[2]||[])[1]||'—').split(' · ')[0],'mem '+String((pr[3]||[])[1]||'—').replace(' used','')].filter(Boolean).join(' · ');
  alert0=(sc.alerts||[])[0]||null;
  const sd=B.side||{},srow=(rows,id)=>{$(id).innerHTML=(rows||[]).map(r=>`<div class="row"><span>${esc(r[0])}</span><em style="${r[2]&&r[2]!=='ok'?'color:'+lcol(r[2]):''}">${esc(r[1])}</em></div>`).join('')};
