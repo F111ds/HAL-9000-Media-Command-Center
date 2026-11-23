@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hal-demo",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["hal_server.py", "--demo", "--host", "127.0.0.1", "--port", "9766"],
+      "port": 9766
+    },
+    {
+      "name": "phone-server",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["mobile_server.py", "--host", "127.0.0.1", "--port", "9765", "--hal-port", "9767"],
+      "port": 9765
+    }
+  ]
+}
